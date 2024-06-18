@@ -87,9 +87,7 @@ class ActionModule(ActionBase):
         bw_record = bw_records_flat[0]
 
         try:
-            self.tempfile_path = self._download_attachment(
-                bw_record["id"], bw_attachment_filename
-            )
+            self.tempfile_path = self._download_attachment(bw_record["id"], bw_attachment_filename)
             # this object's __del__ method will delete the tempfile
         except subprocess.SubprocessError as e:
             result["failed"] = True

@@ -106,7 +106,7 @@ class ActionModule(ActionBase):
         new_play_context.diff = False
 
         copy_action = self._shared_loader_obj.action_loader.get(
-            "copy",
+            "unity.copy_multi_diff.copy",
             task=new_task,
             connection=self._connection,
             play_context=new_play_context,

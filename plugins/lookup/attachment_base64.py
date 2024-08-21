@@ -15,9 +15,6 @@ class LookupModule(LookupBase):
             raise AnsibleError("no variables given!")
         if len(variables["ansible_play_batch"]) > 1:
             raise AnsibleError("too many hosts! use `run_once: true` or `serial: 1`.")
-        # we will overwrite this argument later
-        if "src" in kwargs:
-            raise AnsibleError('argument "src" is forbidden!')
         if not os.path.isdir("/dev/shm"):
             raise AnsibleError("error: /dev/shm is not a directory.")
 

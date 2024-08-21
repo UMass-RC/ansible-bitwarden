@@ -8,7 +8,7 @@ plaintext:
 ```yml
 - name: store secret as a variable in base64
   ansible.builtin.set_fact:
-    secret: "{{ lookup('unity.bitwarden.attachment_base64', item_name='secret', field='notes') }}"
+    secret: "{{ lookup('unity.bitwarden.bitwarden', 'secret', field='notes') }}"
     cacheable: false
   delegate_to: localhost
   delegate_facts: true
@@ -28,7 +28,7 @@ binary:
 ```yml
 - name: store secret binary file as a variable in base64
   ansible.builtin.set_fact:
-    secret_b64: "{{ lookup('unity.bitwarden.attachment_base64', item_name='secret', attachment_filename='secret') }}"
+    secret_b64: "{{ lookup('unity.bitwarden.attachment_base64', 'secret', attachment_filename='secret') }}"
     cacheable: false
   delegate_to: localhost
   delegate_facts: true

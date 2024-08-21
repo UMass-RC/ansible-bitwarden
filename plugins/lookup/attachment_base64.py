@@ -17,8 +17,10 @@ class LookupModule(LookupBase):
             raise AnsibleError("too many hosts! use `run_once: true` or `serial: 1`.")
         if not os.path.isdir("/dev/shm"):
             raise AnsibleError("error: /dev/shm is not a directory.")
+        if len(terms) != 1:
+            raise AnsibleError(f"exactly one posisional argument required. Given: {terms}")
 
-        bw_item_name = kwargs["item_name"]
+        bw_item_name = terms[0]
         bw_attachment_filename = kwargs["attachment_filename"]
 
         bw_item_id = lookup_loader.get("unity.bitwarden.bitwarden").run(

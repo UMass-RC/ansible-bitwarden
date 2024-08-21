@@ -11,10 +11,6 @@ from ansible.errors import AnsibleError
 
 class LookupModule(LookupBase):
     def run(self, terms, variables=None, **kwargs):
-        if variables == None:
-            raise AnsibleError("no variables given!")
-        if len(variables["ansible_play_batch"]) > 1:
-            raise AnsibleError("too many hosts! use `run_once: true` or `serial: 1`.")
         if not os.path.isdir("/dev/shm"):
             raise AnsibleError("error: /dev/shm is not a directory.")
         if len(terms) != 1:

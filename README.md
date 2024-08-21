@@ -1,15 +1,42 @@
-This collection adds a new action plugin: `copy_attachment`. It takes a bitwarden item name, an attachment filename, and a collection ID, and passes all other arguments to `copy`. Example:
+This collection adds two new lookup plugins: `unity.bitwarden.bitwarden` and `unity.bitwarden.attachment_base64`, as well as a module `unity.bitwarden.write_base64_to_file`. Both lookup plugins will fail if you try to run them in parallel. This is due to a limitation in the official Bitwarden CLI client.
 
+There is an argument `collection_id`, but the plugins also look for the variable `bw_default_collection_id`. Both are optional.
+
+## example usage:
+
+plaintext:
 ```yml
-- name: copy from bitwarden attachment to /etc/secrets/secret.key
-  unity.bitwarden.copy_attachment:
-    item_name: secret-item
-    attachment_filename: secret.key
-    collection_id: foo
-    dest: /etc/secrets/secret.key
-    mode: "0400"
+- name: store secret binary file as a variable in base64
+  ansible.builtin.set_fact:
+    secret: "{{ lookup('unity.bitwarden.attachment_base64', item_name='secret', field='notes') }}"
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+
+- name: install secret file
+  ansible.builtin.copy:
+    dest: /path/to/secretfile
+    content: "{{ hostvars['localhost']['secret'] }}"
     owner: root
     group: root
+    mode: "0600"
 ```
 
-Collection ID is optional. You can pass `collection_id` as an argument, or you can set the `default_bw_collection_id` fact.
+binary:
+
+```yml
+- name: store secret binary file as a variable in base64
+  ansible.builtin.set_fact:
+    secret_b64: "{{ lookup('unity.bitwarden.attachment_base64', item_name='secret', attachment_filename='secret') }}"
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+
+- name: install secret file
+  unity.bitwarden.write_base64_to_file:
+    dest: /path/to/secretfile
+    content: "{{ hostvars['localhost']['secret_b64'] }}"
+    owner: root
+    group: root
+    mode: "0600"
+```

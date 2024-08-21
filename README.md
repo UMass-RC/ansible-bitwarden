@@ -6,7 +6,7 @@ There is an argument `collection_id`, but the plugins also look for the variable
 
 plaintext:
 ```yml
-- name: store secret binary file as a variable in base64
+- name: store secret as a variable in base64
   ansible.builtin.set_fact:
     secret: "{{ lookup('unity.bitwarden.attachment_base64', item_name='secret', field='notes') }}"
     cacheable: false

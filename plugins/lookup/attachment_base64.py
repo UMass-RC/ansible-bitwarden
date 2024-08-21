@@ -14,7 +14,7 @@ class LookupModule(LookupBase):
         if variables == None:
             raise AnsibleError("no variables given!")
         if len(variables["ansible_play_batch"]) > 1:
-            raise AnsibleError("too many hosts! use `run_once: true`.")
+            raise AnsibleError("too many hosts! use `run_once: true` or `serial: 1`.")
         # we will overwrite this argument later
         if "src" in kwargs:
             raise AnsibleError('argument "src" is forbidden!')

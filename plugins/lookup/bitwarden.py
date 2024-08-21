@@ -29,7 +29,7 @@ class LookupModule(LookupBase):
         if variables == None:
             raise AnsibleError("no variables given!")
         if len(variables["ansible_play_batch"]) > 1:
-            raise AnsibleError("too many hosts! use `run_once: true`.")
+            raise AnsibleError("too many hosts! use `run_once: true` or `serial: 1`.")
         if "collection_id" not in kwargs and "default_bw_collection_id" in variables:
             kwargs["collection_id"] = variables["default_bw_collection_id"]
 

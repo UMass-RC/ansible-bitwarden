@@ -12,7 +12,7 @@ Also, they check for the variable `default_bw_collection_id` and use it as an ar
 
 plaintext:
 ```yml
-- name: store secret as a variable in base64
+- name: store secret as a variable
   ansible.builtin.set_fact:
     secret: "{{ lookup('unity.bitwarden.bitwarden', 'secret', field='notes') }}"
     cacheable: false

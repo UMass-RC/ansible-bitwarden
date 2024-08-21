@@ -1,6 +1,12 @@
-This collection adds two new lookup plugins: `unity.bitwarden.bitwarden` and `unity.bitwarden.attachment_base64`, as well as a module `unity.bitwarden.write_base64_to_file`. Both lookup plugins will fail if you try to run them in parallel. This is due to a limitation in the official Bitwarden CLI client.
+# unity.bitwarden
 
-There is an argument `collection_id`, but the plugins also look for the variable `bw_default_collection_id`. Both are optional.
+This collection adds two new lookup plugins: `unity.bitwarden.bitwarden` and `unity.bitwarden.attachment_base64`, as well as a module `unity.bitwarden.write_base64_to_file`. These lookups are wrappers for `community.general.bitwarden`, with some restrictions to the interface:
+
+* must not executed in parallel (due to a race condition in the `bw` command)
+* must receive exactly one positional argument
+* must output exactly one result.
+
+Also, they check for the variable `default_bw_collection_id` and use it as an argument to `community.general.bitwarden` if no other collection ID was provided.
 
 ## example usage:
 

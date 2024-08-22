@@ -175,9 +175,8 @@ def main():
                 "mode": result["diff"]["after"]["stat"][-1]["mode"],
             },
         }
-        result["changed"] = slim_diff["before"] != slim_diff["after"]
-    else:
-        result["changed"] = result["diff"]["before"] != result["diff"]["after"]
+        result["diff"] = slim_diff
+    result["changed"] = result["diff"]["before"] != result["diff"]["after"]
 
     if module.check_mode:
         os.remove(dest)  # tempfile

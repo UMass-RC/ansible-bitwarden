@@ -98,7 +98,20 @@ def examine_file(path: str) -> dict:
         else:
             output["content"] = "content ommitted, special file."
     except FileNotFoundError:
-        output = {"state": "absent", "stat": None, "contents": None}
+        output = {"state": "absent", "stat": None, "content": None}
+    return output
+
+
+def format_diffs(examination_before: dict, examination_after: dict) -> list:
+    output = []
+    # automatic content comparison diffs by ansible need it to be this way
+    if "content" in examination_before and "content" in examination_after:
+        output.append(
+            {"before": examination_before["content"], "after": examination_after["content"]}
+        )
+        del examination_before["content"]
+        del examination_after["content"]
+    output.append({"before": examination_before, "after": examination_after})
     return output
 
 
@@ -136,7 +149,7 @@ def main():
     except binascii.Error:
         module.exit_json(failed=True, msg="content is not valid base64!")
 
-    result["diff"] = {"before": examine_file(dest)}
+    examination_before = examine_file(dest)
 
     # use a fake destination file from here on if check mode
     if module.check_mode:
@@ -157,26 +170,33 @@ def main():
     os.chown(dest, uid=owner_uid, gid=group_gid)
     os.chmod(dest, int(mode, 8))
 
-    result["diff"]["after"] = examine_file(dest)
+    examination_after = examine_file(dest)
 
     if module.check_mode:
         # follow symlinks, and ignore all stats except for content owner group mode
-        slim_diff = {
-            "before": {
-                "content": result["diff"]["before"]["content"],
-                "owner": result["diff"]["before"]["stat"][-1]["owner"],
-                "group": result["diff"]["before"]["stat"][-1]["group"],
-                "mode": result["diff"]["before"]["stat"][-1]["mode"],
-            },
-            "after": {
-                "content": result["diff"]["after"]["content"],
-                "owner": result["diff"]["after"]["stat"][-1]["owner"],
-                "group": result["diff"]["after"]["stat"][-1]["group"],
-                "mode": result["diff"]["after"]["stat"][-1]["mode"],
-            },
+        examination_before = {
+            "content": examination_before["content"],
+            "stat": [
+                {
+                    "owner": examination_before["stat"][-1]["owner"],
+                    "group": examination_before["stat"][-1]["group"],
+                    "mode": examination_before["stat"][-1]["mode"],
+                }
+            ],
         }
-        result["diff"] = slim_diff
-    result["changed"] = result["diff"]["before"] != result["diff"]["after"]
+        examination_after = {
+            "content": examination_after["content"],
+            "stat": [
+                {
+                    "owner": examination_after["stat"][-1]["owner"],
+                    "group": examination_after["stat"][-1]["group"],
+                    "mode": examination_after["stat"][-1]["mode"],
+                }
+            ],
+        }
+    if examination_before != examination_after:
+        result["changed"] = True
+        result["diff"] = format_diffs(examination_before, examination_after)
 
     if module.check_mode:
         os.remove(dest)  # tempfile

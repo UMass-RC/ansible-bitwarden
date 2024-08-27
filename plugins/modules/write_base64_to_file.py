@@ -84,7 +84,7 @@ def examine_file(path: str) -> dict:
     try:
         output["stat"] = human_readable_stat(path)
         output["state"] = "present"
-        if output["stat"][0]["file_type"] in ["regular file", "symlink"]:
+        if output["stat"][-1]["file_type"] == "regular file":  # follow symlinks
             try:
                 with open(path, "r", encoding="utf8") as fp:
                     output["content"] = fp.read()
@@ -93,7 +93,7 @@ def examine_file(path: str) -> dict:
                     output["content"] = (
                         f"content ommitted, binary file. sha1sum: {hashlib.sha1(fp.read()).hexdigest()}"
                     )
-        elif output["stat"][0]["file_type"] == "directory":
+        elif output["stat"][-1]["file_type"] == "directory":  # follow symlinks
             output["content"] = os.listdir(path)
         else:
             output["content"] = "content ommitted, special file."

@@ -49,3 +49,12 @@ binary:
     group: root
     mode: "0600"
 ```
+
+## requirements:
+- install Bitwarden CLI Client: `bw`
+- for Mac OSX: setup a RamDisk for secure tempfiles
+
+      brew install tmpdisk
+
+  - using TmpDisk, create a ramdisk called `shm` in the default location: `~/.tmpdisk/shm`.
+  - [TmpDisk github](https://github.com/imothee/tmpdisk)

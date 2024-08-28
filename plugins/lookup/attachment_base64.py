@@ -1,7 +1,7 @@
-import tempfile
 import os
-import subprocess
 import base64
+import tempfile
+import subprocess
 
 
 from ansible.plugins.lookup import LookupBase
@@ -9,10 +9,24 @@ from ansible.plugins.loader import lookup_loader
 from ansible.errors import AnsibleError
 
 
+UNAME2TMPDIR = {
+    "linux": "/dev/shm",
+    "darwin": "~/.tmpdisk/shm",  # https://github.com/imothee/tmpdisk
+}
+
+
 class LookupModule(LookupBase):
     def run(self, terms, variables=None, **kwargs):
-        if not os.path.isdir("/dev/shm"):
-            raise AnsibleError("error: /dev/shm is not a directory.")
+        try:
+            uname = subprocess.check_output("uname", text=True).strip().lower()
+        except FileNotFoundError as e:
+            raise AnsibleError("unsupported operating system: `uname` command not found.") from e
+        try:
+            tmpdir = os.path.expanduser(UNAME2TMPDIR[uname])
+        except KeyError as e:
+            raise AnsibleError(f'unsupported OS: "{uname}"') from e
+        if uname == "darwin" and not os.path.isdir(tmpdir):
+            raise AnsibleError(f'"{tmpdir}" is not a directory. https://github.com/imothee/tmpdisk')
         if len(terms) != 1:
             raise AnsibleError(f"exactly one posisional argument required. Given: {terms}")
 
@@ -23,7 +37,7 @@ class LookupModule(LookupBase):
             [bw_item_name], variables, field="id"
         )[0]
 
-        fd, tempfile_path = tempfile.mkstemp(dir="/dev/shm")
+        fd, tempfile_path = tempfile.mkstemp(dir=tmpdir)
         os.close(fd)
         os.chmod(tempfile_path, 0o600)
         subprocess.run(

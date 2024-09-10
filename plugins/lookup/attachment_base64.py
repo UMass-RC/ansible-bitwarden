@@ -37,7 +37,7 @@ class LookupModule(LookupBase):
             [bw_item_name], variables, field="id"
         )[0]
 
-        fd, tempfile_path = tempfile.mkstemp(dir=tmpdir)
+        fd, tempfile_path = tempfile.mkstemp(dir=tmpdir, prefix="snap.bw.")
         os.close(fd)
         os.chmod(tempfile_path, 0o600)
         subprocess.run(

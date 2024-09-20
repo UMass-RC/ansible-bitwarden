@@ -8,7 +8,6 @@ import os
 import re
 import pwd
 import grp
-import copy
 import stat
 import base64
 import hashlib
@@ -102,6 +101,22 @@ def examine_file(path: str) -> dict:
     return output
 
 
+def minimize_examination(examination: dict) -> dict:
+    if examination["state"] == "absent":
+        return examination
+    return {
+        "state": examination["state"],
+        "content": examination["content"],
+        "stat": [
+            {
+                "owner": examination["stat"][-1]["owner"],
+                "group": examination["stat"][-1]["group"],
+                "mode": examination["stat"][-1]["mode"],
+            }
+        ],
+    }
+
+
 def format_diffs(examination_before: dict, examination_after: dict) -> list:
     output = []
     # automatic content comparison diffs by ansible need it to be this way
@@ -151,56 +166,24 @@ def main():
 
     examination_before = examine_file(dest)
 
-    # use a fake destination file from here on if check mode
-    if module.check_mode:
-        fd, dest = tempfile.mkstemp()
-        os.close(fd)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=module.tmpdir)
+    os.chmod(tmp_path, 0o600)
+    os.write(tmp_fd, content_bytes)
+    os.close(tmp_fd)
+    os.chown(tmp_path, uid=owner_uid, gid=group_gid)
+    os.chmod(tmp_path, int(mode, 8))
 
-    if not os.path.exists(dest):
-        open(dest, "wb").close()  # touch
-
-    os.chmod(dest, 0o600)
-
-    try:
-        with open(dest, "wb") as fp:
-            fp.write(content_bytes)
-    except Exception as e:
-        module.exit_json(failed=True, msg=f"failed to write bytes to file: {e}")
-
-    os.chown(dest, uid=owner_uid, gid=group_gid)
-    os.chmod(dest, int(mode, 8))
-
-    examination_after = examine_file(dest)
-
-    if module.check_mode:
-        # follow symlinks, and ignore all stats except for content owner group mode
-        examination_before = {
-            "content": examination_before["content"],
-            "stat": [
-                {
-                    "owner": examination_before["stat"][-1]["owner"],
-                    "group": examination_before["stat"][-1]["group"],
-                    "mode": examination_before["stat"][-1]["mode"],
-                }
-            ],
-        }
-        examination_after = {
-            "content": examination_after["content"],
-            "stat": [
-                {
-                    "owner": examination_after["stat"][-1]["owner"],
-                    "group": examination_after["stat"][-1]["group"],
-                    "mode": examination_after["stat"][-1]["mode"],
-                }
-            ],
-        }
-    if examination_before != examination_after:
+    examination_before_min = minimize_examination(examination_before)
+    examination_tmp_min = minimize_examination(examine_file(tmp_path))
+    if examination_before_min != examination_tmp_min:
         result["changed"] = True
-        result["diff"] = format_diffs(examination_before, examination_after)
-
-    if module.check_mode:
-        os.remove(dest)  # tempfile
-
+        if module.check_mode:
+            result["diff"] = format_diffs(examination_before_min, examination_tmp_min)
+            os.remove(tmp_path)
+        else:
+            module.atomic_move(tmp_path, dest)
+            examination_after = examine_file(dest)
+            result["diff"] = format_diffs(examination_before, examination_after)
     module.exit_json(**result)
 
 

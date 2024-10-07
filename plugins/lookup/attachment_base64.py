@@ -8,6 +8,58 @@ from ansible.plugins.lookup import LookupBase
 from ansible.plugins.loader import lookup_loader
 from ansible.errors import AnsibleError
 
+DOCUMENTATION = """
+short_description: Retrieve attachment from Bitwarden, base64 encoded
+description:
+  - Uses unity.bitwarden.bitwarden to retrieve the UUID of the record.
+  - Uses the `bw` CLI to download attachment on a tmpfs ramdisk.
+  - Reads attachment into memory and deletes attachment.
+requirements
+  - linux or macOS
+extends_documentation_fragment: unity.bitwarden.lookup
+seealso:
+  - unity.bitwarden.bitwarden
+  - community.general.bitwarden
+"""
+
+RETURN = """
+_raw:
+  description: base64 encoded contents of the specified attachment of the specified record
+  type: string
+"""
+
+
+DOCUMENTATION = """
+    name: attachment_base64
+    author:
+      - Simon Leary (@simonLeary42)
+    requirements:
+      - linux or macOS
+    short_description: fetch the base64 representation of a bitwarden attachment
+    version_added: 0.1.0
+    description: []
+    notes: []
+
+    options:
+      _terms:
+        description:
+        required: true
+
+    extends_documentation_fragment:
+      - unity.bitwarden.lookup
+"""
+
+EXAMPLES = """
+- name: Retrieve a private key from 1Password
+  ansible.builtin.debug:
+    var: lookup('community.general.onepassword_doc', 'Private key')
+"""
+
+RETURN = """
+  _raw:
+    description: Requested document
+    type: string
+"""
 
 UNAME2TMPDIR = {
     "linux": "/dev/shm",

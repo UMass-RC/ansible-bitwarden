@@ -2,6 +2,48 @@ from ansible.plugins.lookup import LookupBase
 from ansible.plugins.loader import lookup_loader
 from ansible.errors import AnsibleError
 
+# DOCUMENTATION = """
+#     extends_documentation_fragment: unity.bitwarden.lookup
+# """
+
+DOCUMENTATION = """
+    name: bitwarden_secrets_manager
+    author:
+      - jantari (@jantari)
+    short_description: Retrieve secret from Bitwarden
+    description:
+        - "Wrapper around P(community.general.bitwarden#lookup)."
+        - "Rather than taking a list of inputs and returning a list of outputs, this uses 1 input and 1 output."
+        - "Adds a better error message."
+        - "Adds the O(default_bw_collection_id) option so that users will be incentivized to place records in a specific bitwarden collection."
+    version_added: 7.2.0
+    extends_documentation_fragment: unity.bitwarden.lookup
+"""
+
+# DOCUMENTATION = """
+#     name: bitwarden_secrets_manager
+#     author:
+#       - jantari (@jantari)
+#     requirements:
+#       - bws (command line utility)
+#     short_description: Retrieve secrets from Bitwarden Secrets Manager
+#     version_added: 7.2.0
+#     description:
+#       - Retrieve secrets from Bitwarden Secrets Manager.
+#     options:
+#       _terms:
+#         description: Secret ID(s) to fetch values for.
+#         required: true
+#         type: list
+#         elements: str
+#       bws_access_token:
+#         description: The BWS access token to use for this lookup.
+#         env:
+#           - name: BWS_ACCESS_TOKEN
+#         required: true
+#         type: str
+# """
+
 
 def make_shell_command(terms, **kwargs) -> str:
     """

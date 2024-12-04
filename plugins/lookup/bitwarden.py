@@ -48,12 +48,12 @@ class LookupModule(LookupBase):
             cache_fd = open(cache_path, "r+")  # read and write but don't truncate
         except OSError as e:
             raise AnsibleError(f"Unable to open lockfile: {e}") from e
-        display.v(f"acquiring lock on file '{cache_path}'...")
         try:
+            display.v(f"acquiring lock on file '{cache_path}'...")
             fcntl.flock(cache_fd, fcntl.LOCK_EX)
             display.v(f"lock acquired on file '{cache_path}'.")
-            cache_fd.seek(0)
             try:
+                cache_fd.seek(0)
                 cache_contents = cache_fd.read()
                 cache = json.loads(cache_contents)
             except json.JSONDecodeError as e:

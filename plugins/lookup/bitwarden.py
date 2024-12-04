@@ -42,15 +42,16 @@ class LookupModule(LookupBase):
         cache_path = os.path.join(os.path.expanduser("~"), ".unity.bitwarden.bitwarden.cache")
         try:
             if not os.path.exists(cache_path):
-                open(cache_path, "w").close()  # Create the file if it doesn't exist
+                display.warning(f"storing plaintext secrets in '{cache_path}'")
+                open(cache_path, "w").close()
             os.chmod(cache_path, 0o600)
-            cache_fd = open(cache_path, "r+")
+            cache_fd = open(cache_path, "r+")  # read and write but don't truncate
         except OSError as e:
             raise AnsibleError(f"Unable to open lockfile: {e}") from e
-        display.v(f"Acquiring lock on file '{cache_path}'...")
+        display.v(f"acquiring lock on file '{cache_path}'...")
         try:
             fcntl.flock(cache_fd, fcntl.LOCK_EX)
-            display.v(f"Lock acquired on file '{cache_path}'.")
+            display.v(f"lock acquired on file '{cache_path}'.")
             cache_fd.seek(0)
             try:
                 cache_contents = cache_fd.read()
@@ -61,10 +62,10 @@ class LookupModule(LookupBase):
                 cache = {}
             cache_key = str(terms) + str(kwargs)
             if cache_key in cache:
-                display.v(f"Using cached result for key '{cache_key}'.")
+                display.v(f"using cached result for key '{cache_key}'.")
                 results = cache[cache_key]
             else:
-                display.v(f"No cache found for key '{cache_key}', performing lookup.")
+                display.v(f"no cache found for key '{cache_key}', performing lookup.")
                 results = lookup_loader.get("community.general.bitwarden").run(
                     terms, variables, **kwargs
                 )
@@ -75,7 +76,7 @@ class LookupModule(LookupBase):
                 cache_fd.flush()
         finally:
             fcntl.flock(cache_fd, fcntl.LOCK_UN)
-            display.v(f"Lock released on file '{cache_path}'.")
+            display.v(f"lock released on file '{cache_path}'.")
 
         # results is a nested list
         # the first index represents each term in terms

@@ -1,6 +1,10 @@
+import os
+import fcntl
+
 from ansible.plugins.lookup import LookupBase
 from ansible.plugins.loader import lookup_loader
 from ansible.errors import AnsibleError
+from ansible.utils.display import Display
 
 
 def make_shell_command(terms, **kwargs) -> str:
@@ -32,7 +36,23 @@ class LookupModule(LookupBase):
         if "collection_id" not in kwargs and "default_bw_collection_id" in variables:
             kwargs["collection_id"] = variables["default_bw_collection_id"]
 
-        results = lookup_loader.get("community.general.bitwarden").run(terms, variables, **kwargs)
+        display = Display()
+        lockfile_path = os.path.join(os.path.expanduser("~"), "unity.bitwarden.bitwarden.lock")
+        try:
+            lockfile_fd = open(lockfile_path, "w")
+        except OSError as e:
+            raise AnsibleError(e) from e
+        display.v(f"acquiring lock on file '{lockfile_path}'...")
+        fcntl.flock(lockfile_fd, fcntl.LOCK_EX)
+        display.v(f"lock acquired on file '{lockfile_path}'.")
+        try:
+            results = lookup_loader.get("community.general.bitwarden").run(
+                terms, variables, **kwargs
+            )
+        finally:
+            if lockfile_path:
+                fcntl.fcntl(lockfile_fd, fcntl.F_UNLCK)  # remove lock
+
         # results is a nested list
         # the first index represents each term in terms
         # the second index represents each item that matches that term

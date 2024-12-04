@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import hashlib
 import fcntl
 
 from ansible.plugins.lookup import LookupBase
@@ -31,13 +32,64 @@ def make_shell_command(terms, **kwargs) -> str:
     return "; ".join(subcommands)
 
 
-def process_bitwarden_lookup_results(results):
+def flatten(results):
     # results is a nested list
     # the first index represents each term in terms
     # the second index represents each item that matches that term
     flat_results = []
     for result_list in results:
         flat_results += result_list
+    return flat_results
+
+
+def lookup_flattened(lookup_lambda):
+    return flatten(lookup_lambda())
+
+
+def lookup_flattened_cached(
+    key,
+    lookup_lambda,
+    cache_path: str,
+    cache_timeout_seconds: int,
+):
+    id = hashlib.sha1(key.encode()).hexdigest()[:5]  # helpful for debugging with concurrent lookups
+    try:
+        if not os.path.exists(cache_path):
+            display.warning(f"storing plaintext secrets in '{cache_path}'")
+            open(cache_path, "w").close()
+        if (time.time() - os.path.getmtime(cache_path)) > cache_timeout_seconds:
+            display.v(f"({id}) cache timed out, truncating...")
+            open(cache_path, "w").close()
+        os.chmod(cache_path, 0o600)
+        cache_fd = open(cache_path, "r+")  # read and write but don't truncate
+    except OSError as e:
+        raise AnsibleError(e) from e
+    display.v(f"({id}) acquiring lock on file '{cache_path}'...'")
+    fcntl.flock(cache_fd, fcntl.LOCK_EX)
+    display.v(f"({id}) lock acquired on file '{cache_path}'.'")
+    try:
+        try:
+            cache_fd.seek(0)
+            cache_contents = cache_fd.read()
+            cache = json.loads(cache_contents)
+        except json.JSONDecodeError as e:
+            display.v(f"({id}) failed to parse cache. contents may be overwritten.\n{e}")
+            display.v(cache_contents)
+            cache = {}
+        if key in cache:
+            return cache[key]
+        results = lookup_lambda()
+        flat_results = flatten(results)
+        if flat_results:  # don't cache failures
+            cache[key] = flat_results
+            cache_fd.seek(0)
+            cache_fd.truncate()
+            json.dump(cache, cache_fd)
+            cache_fd.flush()
+    finally:
+        display.v(f"({id}) releasing lock on file '{cache_path}'... ")
+        fcntl.flock(cache_fd, fcntl.LOCK_UN)
+        cache_fd.close()
     return flat_results
 
 
@@ -62,57 +114,21 @@ class LookupModule(LookupBase):
         else:
             enable_cache = True
 
+        lookup_lambda = (
+            lambda: lookup_loader.get("community.general.bitwarden").run(
+                terms, variables, **kwargs
+            ),
+        )
         if enable_cache:
             cache_path = os.path.join(os.path.expanduser("~"), ".unity.bitwarden.bitwarden.cache")
-            try:
-                if not os.path.exists(cache_path):
-                    display.warning(f"storing plaintext secrets in '{cache_path}'")
-                    open(cache_path, "w").close()
-                os.chmod(cache_path, 0o600)
-                if (time.time() - os.path.getmtime(cache_path)) > cache_timeout_seconds:
-                    display.v("cache timed out, truncating...")
-                    open(cache_path, "w").close()
-                cache_fd = open(cache_path, "r+")  # "r+" = read and write but don't truncate
-            except OSError as e:
-                raise AnsibleError(f"Unable to open lockfile: {e}") from e
-            try:
-                display.v(f"acquiring lock on file '{cache_path}'...")
-                fcntl.flock(cache_fd, fcntl.LOCK_EX)
-                display.v(f"lock acquired on file '{cache_path}'.")
-                try:
-                    cache_fd.seek(0)
-                    cache_contents = cache_fd.read()
-                    cache = json.loads(cache_contents)
-                except json.JSONDecodeError as e:
-                    display.v(f"failed to parse cache: {e}")
-                    display.v(cache_contents)
-                    cache = {}
-                cache_key = str(terms) + str(kwargs)
-                if cache_key in cache:
-                    display.v(f"using cached result for key '{cache_key}'.")
-                    results = cache[cache_key]
-                else:
-                    display.v(f"no cache found for key '{cache_key}', performing lookup.")
-                    results = lookup_loader.get("community.general.bitwarden").run(
-                        terms, variables, **kwargs
-                    )
-                    results = process_bitwarden_lookup_results(results)
-                    # write result back to cache unless it's empty
-                    if results:
-                        cache[cache_key] = results
-                        cache_fd.seek(0)
-                        cache_fd.truncate()
-                        json.dump(cache, cache_fd)
-                        cache_fd.flush()
-            finally:
-                fcntl.flock(cache_fd, fcntl.LOCK_UN)
-                display.v(f"lock released on file '{cache_path}'.")
-        else:
-            results = lookup_loader.get("community.general.bitwarden").run(
-                terms, variables, **kwargs
+            cache_key = str(terms) + str(kwargs)
+            flat_results = lookup_flattened_cached(
+                cache_key, lookup_lambda, cache_path, cache_timeout_seconds
             )
-            results = process_bitwarden_lookup_results(results)
-        if len(results) == 0:
+        else:
+            flat_results = lookup_flattened(lookup_lambda)
+
+        if len(flat_results) == 0:
             raise AnsibleError(
                 "\n".join(
                     [
@@ -126,7 +142,7 @@ class LookupModule(LookupBase):
                 )
             )
 
-        if len(results) > 1:
+        if len(flat_results) > 1:
             raise AnsibleError(
                 "\n".join(
                     [
@@ -139,4 +155,4 @@ class LookupModule(LookupBase):
                 )
             )
         # ansible requires that lookup returns a list
-        return [results[0]]
+        return [flat_results[0]]

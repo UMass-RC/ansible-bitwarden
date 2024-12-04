@@ -1,10 +1,13 @@
 import os
+import json
 import fcntl
 
 from ansible.plugins.lookup import LookupBase
 from ansible.plugins.loader import lookup_loader
 from ansible.errors import AnsibleError
 from ansible.utils.display import Display
+
+display = Display()
 
 
 def make_shell_command(terms, **kwargs) -> str:
@@ -36,22 +39,43 @@ class LookupModule(LookupBase):
         if "collection_id" not in kwargs and "default_bw_collection_id" in variables:
             kwargs["collection_id"] = variables["default_bw_collection_id"]
 
-        display = Display()
-        lockfile_path = os.path.join(os.path.expanduser("~"), "unity.bitwarden.bitwarden.lock")
+        cache_path = os.path.join(os.path.expanduser("~"), ".unity.bitwarden.bitwarden.cache")
         try:
-            lockfile_fd = open(lockfile_path, "w")
+            if not os.path.exists(cache_path):
+                open(cache_path, "w").close()  # Create the file if it doesn't exist
+            os.chmod(cache_path, 0o600)
+            cache_fd = open(cache_path, "r+")
         except OSError as e:
-            raise AnsibleError(e) from e
-        display.v(f"acquiring lock on file '{lockfile_path}'...")
-        fcntl.flock(lockfile_fd, fcntl.LOCK_EX)
-        display.v(f"lock acquired on file '{lockfile_path}'.")
+            raise AnsibleError(f"Unable to open lockfile: {e}") from e
+        display.v(f"Acquiring lock on file '{cache_path}'...")
         try:
-            results = lookup_loader.get("community.general.bitwarden").run(
-                terms, variables, **kwargs
-            )
+            fcntl.flock(cache_fd, fcntl.LOCK_EX)
+            display.v(f"Lock acquired on file '{cache_path}'.")
+            cache_fd.seek(0)
+            try:
+                cache_contents = cache_fd.read()
+                cache = json.loads(cache_contents)
+            except json.JSONDecodeError as e:
+                display.v(f"failed to read cache: {e}")
+                display.v(cache_contents)
+                cache = {}
+            cache_key = str(terms) + str(kwargs)
+            if cache_key in cache:
+                display.v(f"Using cached result for key '{cache_key}'.")
+                results = cache[cache_key]
+            else:
+                display.v(f"No cache found for key '{cache_key}', performing lookup.")
+                results = lookup_loader.get("community.general.bitwarden").run(
+                    terms, variables, **kwargs
+                )
+                cache[cache_key] = results
+                cache_fd.seek(0)
+                cache_fd.truncate()
+                json.dump(cache, cache_fd)
+                cache_fd.flush()
         finally:
-            if lockfile_path:
-                fcntl.fcntl(lockfile_fd, fcntl.F_UNLCK)  # remove lock
+            fcntl.flock(cache_fd, fcntl.LOCK_UN)
+            display.v(f"Lock released on file '{cache_path}'.")
 
         # results is a nested list
         # the first index represents each term in terms

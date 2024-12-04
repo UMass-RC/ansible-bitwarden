@@ -52,32 +52,32 @@ def lookup_flattened_cached(
     cache_path: str,
     cache_timeout_seconds: int,
 ):
-    id = hashlib.sha1(key.encode()).hexdigest()[:5]  # helpful for debugging with concurrent lookups
     try:
         if not os.path.exists(cache_path):
             display.warning(f"storing plaintext secrets in '{cache_path}'")
             open(cache_path, "w").close()
         if (time.time() - os.path.getmtime(cache_path)) > cache_timeout_seconds:
-            display.v(f"({id}) cache timed out, truncating...")
+            display.v(f"({key}) cache timed out, truncating...")
             open(cache_path, "w").close()
         os.chmod(cache_path, 0o600)
         cache_fd = open(cache_path, "r+")  # read and write but don't truncate
     except OSError as e:
         raise AnsibleError(e) from e
-    display.v(f"({id}) acquiring lock on file '{cache_path}'...'")
+    display.v(f"({key}) acquiring lock on file '{cache_path}'...'")
     fcntl.flock(cache_fd, fcntl.LOCK_EX)
-    display.v(f"({id}) lock acquired on file '{cache_path}'.'")
+    display.v(f"({key}) lock acquired on file '{cache_path}'.'")
     try:
         try:
             cache_fd.seek(0)
             cache_contents = cache_fd.read()
             cache = json.loads(cache_contents)
         except json.JSONDecodeError as e:
-            display.v(f"({id}) failed to parse cache. contents may be overwritten.\n{e}")
+            display.v(f"({key}) failed to parse cache. contents may be overwritten.\n{e}")
             display.v(cache_contents)
             cache = {}
         if key in cache:
             return cache[key]
+        display.v(f"({key}) key not found in cache. executing lookup...")
         results = lookup_lambda()
         flat_results = flatten(results)
         if flat_results:  # don't cache failures
@@ -87,7 +87,7 @@ def lookup_flattened_cached(
             json.dump(cache, cache_fd)
             cache_fd.flush()
     finally:
-        display.v(f"({id}) releasing lock on file '{cache_path}'... ")
+        display.v(f"({key}) releasing lock on file '{cache_path}'... ")
         fcntl.flock(cache_fd, fcntl.LOCK_UN)
         cache_fd.close()
     return flat_results
@@ -114,18 +114,17 @@ class LookupModule(LookupBase):
         else:
             enable_cache = True
 
-        lookup_lambda = (
-            lambda: lookup_loader.get("community.general.bitwarden").run(
-                terms, variables, **kwargs
-            ),
+        lookup_lambda = lambda: lookup_loader.get("community.general.bitwarden").run(
+            terms, variables, **kwargs
         )
+        cache_key = hashlib.sha1((str(terms) + str(kwargs)).encode()).hexdigest()[:5]
         if enable_cache:
             cache_path = os.path.join(os.path.expanduser("~"), ".unity.bitwarden.bitwarden.cache")
-            cache_key = str(terms) + str(kwargs)
             flat_results = lookup_flattened_cached(
                 cache_key, lookup_lambda, cache_path, cache_timeout_seconds
             )
         else:
+            display.v(f"({cache_key}) cache disabled. executing lookup...")
             flat_results = lookup_flattened(lookup_lambda)
 
         if len(flat_results) == 0:

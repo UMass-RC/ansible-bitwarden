@@ -1,13 +1,11 @@
-import os
-import json
-import time
 import hashlib
-import fcntl
 
 from ansible.plugins.lookup import LookupBase
 from ansible.plugins.loader import lookup_loader
 from ansible.errors import AnsibleError
 from ansible.utils.display import Display
+
+from ansible_collections.unity.bitwarden.plugins.plugin_utils import cache_lambda
 
 display = Display()
 
@@ -32,65 +30,42 @@ def make_shell_command(terms, **kwargs) -> str:
     return "; ".join(subcommands)
 
 
-def flatten(results):
+def do_bitwarden_lookup(terms, variables, **kwargs):
+    results = lookup_loader.get("community.general.bitwarden").run(terms, variables, **kwargs)
     # results is a nested list
     # the first index represents each term in terms
     # the second index represents each item that matches that term
     flat_results = []
     for result_list in results:
         flat_results += result_list
-    return flat_results
+    if len(flat_results) == 0:
+        raise AnsibleError(
+            "\n".join(
+                [
+                    "",
+                    "no results found!",
+                    'make sure that your item is in the "Ansible" bitwarden collection, or specify a different collection ID.',
+                    "also make sure you run `bw sync` to get recent changes from upstream.",
+                    "feel free to double check my work by using the bitwarden CLI yourself:",
+                    make_shell_command(terms, **kwargs),
+                ]
+            )
+        )
 
-
-def lookup_flattened(lookup_lambda):
-    return flatten(lookup_lambda())
-
-
-def lookup_flattened_cached(
-    key,
-    lookup_lambda,
-    cache_path: str,
-    cache_timeout_seconds: int,
-):
-    try:
-        if not os.path.exists(cache_path):
-            display.warning(f"storing plaintext secrets in '{cache_path}'")
-            open(cache_path, "w").close()
-        if (time.time() - os.path.getmtime(cache_path)) > cache_timeout_seconds:
-            display.v(f"({key}) cache timed out, truncating...")
-            open(cache_path, "w").close()
-        os.chmod(cache_path, 0o600)
-        cache_fd = open(cache_path, "r+")  # read and write but don't truncate
-    except OSError as e:
-        raise AnsibleError(e) from e
-    display.v(f"({key}) acquiring lock on file '{cache_path}'...'")
-    fcntl.flock(cache_fd, fcntl.LOCK_EX)
-    display.v(f"({key}) lock acquired on file '{cache_path}'.'")
-    try:
-        try:
-            cache_fd.seek(0)
-            cache_contents = cache_fd.read()
-            cache = json.loads(cache_contents)
-        except json.JSONDecodeError as e:
-            display.v(f"({key}) failed to parse cache. contents may be overwritten.\n{e}")
-            display.v(cache_contents)
-            cache = {}
-        if key in cache:
-            return cache[key]
-        display.v(f"({key}) key not found in cache. executing lookup...")
-        results = lookup_lambda()
-        flat_results = flatten(results)
-        if flat_results:  # don't cache failures
-            cache[key] = flat_results
-            cache_fd.seek(0)
-            cache_fd.truncate()
-            json.dump(cache, cache_fd)
-            cache_fd.flush()
-    finally:
-        display.v(f"({key}) releasing lock on file '{cache_path}'... ")
-        fcntl.flock(cache_fd, fcntl.LOCK_UN)
-        cache_fd.close()
-    return flat_results
+    if len(flat_results) > 1:
+        raise AnsibleError(
+            "\n".join(
+                [
+                    "",
+                    "expected single result but multiple results found!",
+                    "to use multiple results, use the `community.general.bitwarden` lookup.",
+                    "feel free to double check my work by using the bitwarden CLI yourself:",
+                    make_shell_command(terms, **kwargs),
+                ]
+            )
+        )
+    # ansible requires that lookup returns a list
+    return [flat_results[0]]
 
 
 class LookupModule(LookupBase):
@@ -114,44 +89,12 @@ class LookupModule(LookupBase):
         else:
             enable_cache = True
 
-        lookup_lambda = lambda: lookup_loader.get("community.general.bitwarden").run(
-            terms, variables, **kwargs
-        )
-        cache_key = hashlib.sha1((str(terms) + str(kwargs)).encode()).hexdigest()[:5]
         if enable_cache:
-            cache_path = os.path.join(os.path.expanduser("~"), ".unity.bitwarden.bitwarden.cache")
-            flat_results = lookup_flattened_cached(
-                cache_key, lookup_lambda, cache_path, cache_timeout_seconds
+            return cache_lambda(
+                hashlib.sha1((str(terms) + str(kwargs)).encode()).hexdigest()[:5],
+                ".unity.bitwarden.cache",
+                lambda: do_bitwarden_lookup(terms, variables, **kwargs),
+                cache_timeout_seconds,
             )
         else:
-            display.v(f"({cache_key}) cache disabled. executing lookup...")
-            flat_results = lookup_flattened(lookup_lambda)
-
-        if len(flat_results) == 0:
-            raise AnsibleError(
-                "\n".join(
-                    [
-                        "",
-                        "no results found!",
-                        'make sure that your item is in the "Ansible" bitwarden collection, or specify a different collection ID.',
-                        "also make sure you run `bw sync` to get recent changes from upstream.",
-                        "feel free to double check my work by using the bitwarden CLI yourself:",
-                        make_shell_command(terms, **kwargs),
-                    ]
-                )
-            )
-
-        if len(flat_results) > 1:
-            raise AnsibleError(
-                "\n".join(
-                    [
-                        "",
-                        "expected single result but multiple results found!",
-                        "to use multiple results, use the `community.general.bitwarden` lookup.",
-                        "feel free to double check my work by using the bitwarden CLI yourself:",
-                        make_shell_command(terms, **kwargs),
-                    ]
-                )
-            )
-        # ansible requires that lookup returns a list
-        return [flat_results[0]]
+            return do_bitwarden_lookup(terms, variables, **kwargs)

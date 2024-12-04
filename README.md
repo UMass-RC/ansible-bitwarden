@@ -1,6 +1,8 @@
 # unity.bitwarden
 
-This collection adds two new lookup plugins: `unity.bitwarden.bitwarden` and `unity.bitwarden.attachment_base64`, as well as a module `unity.bitwarden.write_base64_to_file`. These lookups are wrappers for `community.general.bitwarden`, with some restrictions to the interface:
+This collection adds two new lookup plugins: `unity.bitwarden.bitwarden` and `unity.bitwarden.attachment_base64`, as well as a module `unity.bitwarden.write_base64_to_file`. The Bitwarden CLI `bw` is slow and cannot run in parallel. These lookups implement their own cacheing and locking so they can be fast and run in parallel.
+
+`unity.bitwarden.bitwarden.` is a wrapper around `community.general.bitwarden.` with some restrictions to the interface:
 
 * must receive exactly one positional argument
 * must output exactly one result.
@@ -9,22 +11,12 @@ Also, they check for the variable `default_bw_collection_id` and use it as an ar
 
 ## example usage:
 
-These lookups **should not be run in parallel**! The official Bitwarden CLI client is only designed to be run one at a time. Ansible does not provide a way for the lookup logic to detect whether it is being run in parallel, or else I would make the lookup instantly fail.
-
 plaintext:
 ```yml
-- name: store secret as a variable
-  ansible.builtin.set_fact:
-    secret: "{{ lookup('unity.bitwarden.bitwarden', 'secret', field='notes') }}"
-    cacheable: false
-  delegate_to: localhost
-  delegate_facts: true
-  run_once: true
-
 - name: install secret file
   ansible.builtin.copy:
     dest: /path/to/secretfile
-    content: "{{ hostvars['localhost']['secret'] }}"
+    content: "{{ lookup('unity.bitwarden.bitwarden', 'secret', field='notes') }}"
     owner: root
     group: root
     mode: "0600"
@@ -33,28 +25,23 @@ plaintext:
 binary:
 
 ```yml
-- name: store secret binary file as a variable in base64
-  ansible.builtin.set_fact:
-    secret_b64: "{{ lookup('unity.bitwarden.attachment_base64', 'secret', attachment_filename='secret') }}"
-    cacheable: false
-  delegate_to: localhost
-  delegate_facts: true
-  run_once: true
-
 - name: install secret file
   unity.bitwarden.write_base64_to_file:
     dest: /path/to/secretfile
-    content: "{{ hostvars['localhost']['secret_b64'] }}"
+    content: "{{ lookup('unity.bitwarden.attachment_base64', 'secret', attachment_filename='secret') }}"
     owner: root
     group: root
     mode: "0600"
 ```
 
 ## requirements:
-- install Bitwarden CLI Client: `bw`
-- for Mac OSX: setup a RamDisk for secure tempfiles
+- `community.general` collection
+- Bitwarden CLI Client: `bw`
+- linux or macos
+  - for linux: the `/dev/shm/` directory must exist
+  - for macos: setup a RamDisk for secure tempfiles
 
-      brew install tmpdisk
+        brew install tmpdisk
 
-  - using TmpDisk, create a ramdisk called `shm` in the default location: `~/.tmpdisk/shm`.
-  - [TmpDisk github](https://github.com/imothee/tmpdisk)
+    - using TmpDisk, create a ramdisk called `shm` in the default location: `~/.tmpdisk/shm`.
+    - [TmpDisk github](https://github.com/imothee/tmpdisk)

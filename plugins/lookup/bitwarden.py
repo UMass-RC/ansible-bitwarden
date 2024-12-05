@@ -1,3 +1,42 @@
+DOCUMENTATION = """
+  name: bitwarden
+  author: Simon Leary <simon.leary42@proton.me>
+  requirements:
+    - bw (command line utility)
+    - be logged into bitwarden
+    - bitwarden vault unlocked
+    - E(BW_SESSION) environment variable set
+    - P(community.general.bitwarden#lookup)
+  short_description: Retrieve secrets from Bitwarden
+  version_added: 2.17.3
+  description:
+    - wrapper around P(community.general.bitwarden#lookup)
+    - all options not mentioned here are passed directly to P(community.general.bitwarden#lookup)
+    - the `bw` command is slow and cannot be used in parallel, but this plugin uses ramdisk cache
+    - so it is fast and safe in parallel.
+  options:
+    _terms:
+      description: item names to search for. exactly 1 item name required!
+      required: true
+      type: list
+      elements: str
+    default_collection_id:
+        description: if no collection ID is given to a task, use this one by default
+        ini:
+          - section: bitwarden
+            key: default_collection_id
+        env:
+          - name: BITWARDEN_DEFAULT_COLLECTION_ID
+        required: false
+        type: string
+  notes: []
+  seealso:
+    - plugin: community.general.bitwarden
+      plugin_type: lookup
+  extends_documentation_fragment:
+    - unity.bitwarden.ramdisk_cached_lookup
+"""
+
 import hashlib
 
 from ansible.plugins.lookup import LookupBase
@@ -5,7 +44,9 @@ from ansible.plugins.loader import lookup_loader
 from ansible.errors import AnsibleError
 from ansible.utils.display import Display
 
-from ansible_collections.unity.bitwarden.plugins.plugin_utils import cache_lambda
+from ansible_collections.unity.bitwarden.plugins.plugin_utils.ramdisk_cached_lookup import (
+    RamDiskCachedLookupBase,
+)
 
 display = Display()
 
@@ -31,6 +72,7 @@ def make_shell_command(terms, **kwargs) -> str:
 
 
 def do_bitwarden_lookup(terms, variables, **kwargs):
+    display.v(f"running bitwarden lookup with terms: {terms} and kwargs: {kwargs}")
     results = lookup_loader.get("community.general.bitwarden").run(terms, variables, **kwargs)
     # results is a nested list
     # the first index represents each term in terms
@@ -68,33 +110,20 @@ def do_bitwarden_lookup(terms, variables, **kwargs):
     return [flat_results[0]]
 
 
-class LookupModule(LookupBase):
+class LookupModule(RamDiskCachedLookupBase):
 
     def run(self, terms, variables=None, **kwargs):
+        self.set_options(direct=kwargs)
         if len(terms) != 1:
             raise AnsibleError(f"exactly one posisional argument required. Given: {terms}")
 
-        if "collection_id" not in kwargs and "default_bw_collection_id" in variables:
-            kwargs["collection_id"] = variables["default_bw_collection_id"]
+        default_collection_id = self.get_option("default_collection_id")
+        if "collection_id" not in kwargs and default_collection_id is not None:
+            kwargs["collection_id"] = default_collection_id
 
-        if "cache_timeout_seconds" in kwargs:
-            cache_timeout_seconds = kwargs["cache_timeout_seconds"]
-            kwargs.pop("cache_timeout_seconds")
-        else:
-            cache_timeout_seconds = 3600
-
-        if "enable_cache" in kwargs:
-            enable_cache = kwargs["enable_cache"]
-            kwargs.pop("enable_cache")
-        else:
-            enable_cache = True
-
-        if enable_cache:
-            return cache_lambda(
-                hashlib.sha1((str(terms) + str(kwargs)).encode()).hexdigest()[:5],
-                ".unity.bitwarden.cache",
-                lambda: do_bitwarden_lookup(terms, variables, **kwargs),
-                cache_timeout_seconds,
-            )
-        else:
-            return do_bitwarden_lookup(terms, variables, **kwargs)
+        cache_key = hashlib.sha1((str(terms) + str(kwargs)).encode()).hexdigest()[:5]
+        return self.cache_lambda(
+            cache_key,
+            ".unity.bitwarden.cache",
+            lambda: do_bitwarden_lookup(terms, variables, **kwargs),
+        )

@@ -38,6 +38,7 @@ DOCUMENTATION = """
 """
 
 import hashlib
+import getpass
 
 from ansible.plugins.lookup import LookupBase
 from ansible.plugins.loader import lookup_loader
@@ -49,6 +50,7 @@ from ansible_collections.unity.bitwarden.plugins.plugin_utils.ramdisk_cached_loo
 )
 
 display = Display()
+username = getpass.getuser()
 
 
 def make_shell_command(terms, **kwargs) -> str:
@@ -124,6 +126,6 @@ class LookupModule(RamDiskCachedLookupBase):
         cache_key = hashlib.sha1((str(terms) + str(kwargs)).encode()).hexdigest()[:5]
         return self.cache_lambda(
             cache_key,
-            ".unity.bitwarden.cache",
+            f".unity.bitwarden.cache-{username}",
             lambda: do_bitwarden_lookup(terms, variables, **kwargs),
         )
